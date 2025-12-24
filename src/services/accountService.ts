@@ -26,6 +26,10 @@ export async function deleteAccount(accountId: string): Promise<void> {
     return await invoke('delete_account', { accountId });
 }
 
+export async function deleteAccounts(accountIds: string[]): Promise<void> {
+    return await invoke('delete_accounts', { accountIds });
+}
+
 export async function switchAccount(accountId: string): Promise<void> {
     return await invoke('switch_account', { accountId });
 }
@@ -77,4 +81,8 @@ export async function importV1Accounts(): Promise<Account[]> {
 
 export async function importFromDb(): Promise<Account> {
     return await invoke('import_from_db');
+}
+
+export async function syncAccountFromDb(): Promise<Account | null> {
+    return await invoke('sync_account_from_db');
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { save } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { join } from '@tauri-apps/api/path';
@@ -27,6 +27,7 @@ function Accounts() {
         fetchAccounts,
         addAccount,
         deleteAccount,
+        deleteAccounts,
         switchAccount,
         loading,
         refreshQuota,
@@ -41,9 +42,49 @@ function Accounts() {
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
     const [isBatchDelete, setIsBatchDelete] = useState(false);
 
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+
+    useEffect(() => {
+        if (!containerRef.current) return;
+        const resizeObserver = new ResizeObserver((entries) => {
+            for (let entry of entries) {
+                setContainerSize({
+                    width: entry.contentRect.width,
+                    height: entry.contentRect.height
+                });
+            }
+        });
+        resizeObserver.observe(containerRef.current);
+        return () => resizeObserver.disconnect();
+    }, []);
+
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
-    const ITEMS_PER_PAGE = viewMode === 'grid' ? 6 : 8;
+
+    // 动态计算分页条数
+    const ITEMS_PER_PAGE = useMemo(() => {
+        if (!containerSize.height) return viewMode === 'grid' ? 6 : 8;
+
+        if (viewMode === 'list') {
+            const headerHeight = 36; // 缩深后的表头高度
+            const rowHeight = 42;    // 极限压缩后的行高
+            // 计算能容纳多少行，至少 1 行
+            return Math.max(1, Math.floor((containerSize.height - headerHeight) / rowHeight));
+        } else {
+            const cardHeight = 158; // AccountCard 预估高度 (含间距)
+            const gap = 16;         // gap-4
+
+            // 匹配 Tailwind 断点逻辑
+            let cols = 1;
+            if (containerSize.width >= 1200) cols = 4;      // xl (约为 1280 左右)
+            else if (containerSize.width >= 900) cols = 3;   // lg (约为 1024 左右)
+            else if (containerSize.width >= 600) cols = 2;   // md (约为 768 左右)
+
+            const rows = Math.max(1, Math.floor((containerSize.height + gap) / (cardHeight + gap)));
+            return cols * rows;
+        }
+    }, [containerSize, viewMode]);
 
     useEffect(() => {
         fetchAccounts();
@@ -180,8 +221,7 @@ function Accounts() {
         try {
             const ids = Array.from(selectedIds);
             console.log('[Accounts] Batch deleting:', ids);
-            await Promise.all(ids.map(id => deleteAccount(id)));
-            setSelectedIds(new Set());
+            await deleteAccounts(ids);
             setSelectedIds(new Set());
             console.log('[Accounts] Batch delete success');
             showToast(t('common.success'), 'success');
@@ -449,7 +489,7 @@ function Accounts() {
             </div>
 
             {/* 账号列表内容区域 */}
-            <div className="flex-1 min-h-0 relative">
+            <div className="flex-1 min-h-0 relative" ref={containerRef}>
                 {viewMode === 'list' ? (
                     <div className="h-full bg-white dark:bg-base-100 rounded-2xl shadow-sm border border-gray-100 dark:border-base-200 flex flex-col overflow-hidden">
                         <div className="flex-1 overflow-y-auto">
