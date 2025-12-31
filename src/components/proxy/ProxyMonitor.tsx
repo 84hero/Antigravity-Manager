@@ -217,27 +217,55 @@ export const ProxyMonitor: React.FC<ProxyMonitorProps> = ({ className }) => {
             </div>
 
             {selectedLog && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setSelectedLog(null)}>
-                    <div className="bg-white dark:bg-base-100 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
-                        <div className="px-4 py-3 border-b flex items-center justify-between bg-gray-50">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setSelectedLog(null)}>
+                    <div className="bg-white dark:bg-base-100 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden border border-gray-200 dark:border-base-300" onClick={e => e.stopPropagation()}>
+                        {/* Modal Header */}
+                        <div className="px-4 py-3 border-b border-gray-100 dark:border-base-300 flex items-center justify-between bg-gray-50 dark:bg-base-200">
                             <div className="flex items-center gap-3">
-                                <span className={`badge badge-sm text-white ${selectedLog.status >= 200 && selectedLog.status < 400 ? 'badge-success' : 'badge-error'}`}>{selectedLog.status}</span>
-                                <span className="font-mono font-bold">{selectedLog.method} {selectedLog.url}</span>
+                                <span className={`badge badge-sm text-white border-none ${selectedLog.status >= 200 && selectedLog.status < 400 ? 'badge-success' : 'badge-error'}`}>{selectedLog.status}</span>
+                                <span className="font-mono font-bold text-gray-900 dark:text-base-content">{selectedLog.method}</span>
+                                <span className="text-xs text-gray-500 dark:text-gray-400 font-mono truncate max-w-md hidden sm:inline">{selectedLog.url}</span>
                             </div>
-                            <button onClick={() => setSelectedLog(null)} className="btn btn-ghost btn-sm btn-circle"><X size={18} /></button>
+                            <button onClick={() => setSelectedLog(null)} className="btn btn-ghost btn-sm btn-circle dark:text-gray-400"><X size={18} /></button>
                         </div>
-                        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                            <div className="bg-gray-50 p-4 rounded-xl text-xs grid grid-cols-2 gap-4">
-                                <div><span className="text-gray-400">Time:</span> {new Date(selectedLog.timestamp).toLocaleString()}</div>
-                                <div><span className="text-gray-400">Duration:</span> {selectedLog.duration}ms</div>
-                                <div><span className="text-gray-400">Model:</span> {selectedLog.model || '-'}</div>
-                                <div><span className="text-gray-400">Tokens:</span> I:{selectedLog.input_tokens ?? 0} / O:{selectedLog.output_tokens ?? 0}</div>
+
+                        {/* Modal Content */}
+                        <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                            {/* Metadata Section */}
+                            <div className="bg-gray-50 dark:bg-base-300/50 p-4 rounded-xl border border-gray-100 dark:border-base-300/30">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-y-4 gap-x-8 text-xs">
+                                    <div className="space-y-1">
+                                        <span className="block text-gray-400 uppercase font-bold text-[10px] tracking-wider">{t('monitor.details.time')}</span>
+                                        <span className="font-mono text-gray-700 dark:text-gray-200">{new Date(selectedLog.timestamp).toLocaleString()}</span>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <span className="block text-gray-400 uppercase font-bold text-[10px] tracking-wider">{t('monitor.details.duration')}</span>
+                                        <span className="font-mono text-gray-700 dark:text-gray-200">{selectedLog.duration}ms</span>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <span className="block text-gray-400 uppercase font-bold text-[10px] tracking-wider">{t('monitor.details.tokens')}</span>
+                                        <div className="font-mono text-[11px] flex gap-2">
+                                            <span className="text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded border border-blue-100 dark:border-blue-800/50">In: {selectedLog.input_tokens ?? 0}</span>
+                                            <span className="text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 px-2 py-0.5 rounded border border-green-100 dark:border-green-800/50">Out: {selectedLog.output_tokens ?? 0}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="mt-4 pt-4 border-t border-gray-200/50 dark:border-base-300/50">
+                                    <span className="block text-gray-400 uppercase font-bold text-[10px] tracking-wider mb-1">{t('monitor.details.model')}</span>
+                                    <span className="font-mono font-bold text-blue-600 dark:text-blue-400 break-all">{selectedLog.model || '-'}</span>
+                                </div>
                             </div>
-                            <div className="space-y-2">
-                                <div className="text-xs font-bold text-gray-400 uppercase">{t('monitor.details.request_payload')}</div>
-                                <div className="bg-gray-50 dark:bg-base-300 p-3 rounded-lg overflow-hidden border">{formatBody(selectedLog.request_body)}</div>
-                                <div className="text-xs font-bold text-gray-400 uppercase">{t('monitor.details.response_payload')}</div>
-                                <div className="bg-gray-50 dark:bg-base-300 p-3 rounded-lg overflow-hidden border">{formatBody(selectedLog.response_body)}</div>
+
+                            {/* Payloads */}
+                            <div className="space-y-4">
+                                <div>
+                                    <h3 className="text-xs font-bold uppercase text-gray-400 mb-2 flex items-center gap-2">{t('monitor.details.request_payload')}</h3>
+                                    <div className="bg-gray-50 dark:bg-base-300 rounded-lg p-3 border border-gray-100 dark:border-base-300 overflow-hidden">{formatBody(selectedLog.request_body)}</div>
+                                </div>
+                                <div>
+                                    <h3 className="text-xs font-bold uppercase text-gray-400 mb-2 flex items-center gap-2">{t('monitor.details.response_payload')}</h3>
+                                    <div className="bg-gray-50 dark:bg-base-300 rounded-lg p-3 border border-gray-100 dark:border-base-300 overflow-hidden">{formatBody(selectedLog.response_body)}</div>
+                                </div>
                             </div>
                         </div>
                     </div>
