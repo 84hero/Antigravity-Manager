@@ -41,15 +41,6 @@ pub fn store_thought_signature(sig: &str) {
     }
 }
 
-/// 获取并清除全局存储的 thoughtSignature
-pub fn take_thought_signature() -> Option<String> {
-    if let Ok(mut guard) = get_thought_sig_storage().lock() {
-        guard.take()
-    } else {
-        None
-    }
-}
-
 /// 获取全局存储的 thoughtSignature（不清除）
 pub fn get_thought_signature() -> Option<String> {
     if let Ok(guard) = get_thought_sig_storage().lock() {
