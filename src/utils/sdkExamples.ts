@@ -8,9 +8,9 @@ export const getPythonExample = (
     lang: string = 'en'
 ): string => {
     const isZh = lang.startsWith('zh');
-    // 127.0.0.1 包示
+    // 127.0.0.1 提示
     const baseUrlComment = isZh 
-        ? '# \u63a8\u8350\u4f7f\u7528 127.0.0.1 \u4ee5\u907f\u514d\u90e8\u5206\u73af\u5883 IPv6 \u89e3\u6790\u5ef6\u8fdf\u95ee\u9898' 
+        ? '# 推荐使用 127.0.0.1 以避免部分环境 IPv6 解析延迟问题' 
         : '# Recommended: Use 127.0.0.1 to avoid IPv6 resolution delays';
     
     const baseUrl = `http://127.0.0.1:${port}/v1`;
@@ -18,7 +18,7 @@ export const getPythonExample = (
     // 1. Anthropic Protocol
     if (protocol === 'anthropic') {
         const anthropicSdkNote = isZh
-            ? '# \u6ce8\u610f: Antigravity \u652f\u6301\u4f7f\u7528 Anthropic SDK \u8c03\u7528\u4efb\u610f\u6a21\u578b'
+            ? '# 注意: Antigravity 支持使用 Anthropic SDK 调用任意模型'
             : '# Note: Antigravity supports calling any model via Anthropic SDK';
 
         return `from anthropic import Anthropic
@@ -43,10 +43,10 @@ export const getPythonExample = (
     if (protocol === 'gemini') {
         const rawBaseUrl = `http://127.0.0.1:${port}`;
         const installComment = isZh
-            ? '# \u9700\u8981\u5b89\u88c5: pip install google-generativeai'
+            ? '# 需要安装: pip install google-generativeai'
             : '# Install: pip install google-generativeai';
         const proxyComment = isZh
-            ? '# \u4f7f\u7528 Antigravity \u4ee3\u7406\u5730\u5740 (\u63a8\u8350 127.0.0.1)'
+            ? '# 使用 Antigravity 代理地址 (推荐 127.0.0.1)'
             : '# Use Antigravity proxy address (Recommended 127.0.0.1)';
 
         return `${installComment}
@@ -67,16 +67,16 @@ print(response.text)`;
     // 3. OpenAI Protocol
     if (modelId.startsWith('gemini-3-pro-image')) {
         const sizeComment = isZh
-            ? '# \u65b9\u5f0f 1: \u4f7f\u7528 size \u53c2\u6570 (\u63a8\u8350)'
+            ? '# 方式 1: 使用 size 参数 (推荐)'
             : '# Method 1: Use size parameter (Recommended)';
         const supportComment = isZh
-            ? '# \u652f\u6301: "1024x1024" (1:1), "1280x720" (16:9), "720x1280" (9:16), "1216x896" (4:3)'
+            ? '# 支持: "1024x1024" (1:1), "1280x720" (16:9), "720x1280" (9:16), "1216x896" (4:3)'
             : '# Supports: "1024x1024" (1:1), "1280x720" (16:9), "720x1280" (9:16), "1216x896" (4:3)';
         const suffixComment = isZh
-            ? '# \u65b9\u5f0f 2: \u4f7f\u7528\u6a21\u578b\u540e\u7f00'
+            ? '# 方式 2: 使用模型后缀'
             : '# Method 2: Use model suffix';
         const exampleComment = isZh
-            ? '# \u4f8b\u5982: gemini-3-pro-image-16-9, gemini-3-pro-image-4-3'
+            ? '# 例如: gemini-3-pro-image-16-9, gemini-3-pro-image-4-3'
             : '# e.g.: gemini-3-pro-image-16-9, gemini-3-pro-image-4-3';
 
         return `from openai import OpenAI
@@ -153,7 +153,7 @@ main();`;
 
     if (protocol === 'gemini') {
         const comment = isZh 
-            ? '// \u63a8\u8350: \u4f7f\u7528 OpenAI SDK \u5305\u5bb9\u6a21\u5f0f\u8c03\u7528 Gemini'
+            ? '// 推荐: 使用 OpenAI SDK 兼容模式调用 Gemini' 
             : '// Recommended: Use OpenAI SDK compatibility mode for Gemini';
         
         return `${comment}
@@ -179,15 +179,15 @@ main();`;
 
     if (modelId.startsWith('gemini-3-pro-image')) {
         const sizeComment = isZh 
-            ? '// \u65b9\u5f0f 1: \u4f7f\u7528 size \u53c2\u6570 (\u63a8\u8350)' 
+            ? '// 方式 1: 使用 size 参数 (推荐)' 
             : '// Method 1: Use size parameter (Recommended)';
 
         return `// npm install openai
 import OpenAI from 'openai';
 
 const client = new OpenAI({
-  baseURL: '${baseUrl}',
   apiKey: '${apiKey}',
+  baseURL: '${baseUrl}',
 });
 
 async function main() {
@@ -208,8 +208,8 @@ main();`;
 import OpenAI from 'openai';
 
 const client = new OpenAI({
-  baseURL: '${baseUrl}',
   apiKey: '${apiKey}',
+  baseURL: '${baseUrl}',
 });
 
 async function main() {
@@ -236,7 +236,7 @@ export const getGoExample = (
 
     if (protocol === 'anthropic') {
         const note = isZh
-            ? '// Anthropic \u5b98\u65b9\u76ee\u524d\u5c1a\u672a\u53d1\u5e03 Go SDK, \u5efa\u8bae\u4f7f\u7528\u6807\u51c6\u5e93\u6216\u7b2c\u4e09\u65b9\u5e93'
+            ? '// Anthropic 官方目前尚未发布 Go SDK, 建议使用标准库或第三方库'
             : '// Anthropic does not have an official Go SDK yet, using standard library is recommended';
 
         return `package main
@@ -275,13 +275,12 @@ func main() {
 	defer resp.Body.Close()
 	
 	body, _ := ioutil.ReadAll(resp.Body)
-	fmt.Println(string(body))
-}`;
+	fmt.Println(string(body))`;
     }
 
     if (protocol === 'gemini') {
         const comment = isZh 
-            ? '// \u63a8\u8350: \u4f7f\u7528 OpenAI SDK \u5305\u5bb9\u6a21\u5f0f\u8c03\u7528 Gemini'
+            ? '// 推荐: 使用 OpenAI SDK 兼容模式调用 Gemini' 
             : '// Recommended: Use OpenAI SDK compatibility mode for Gemini';
 
         return `package main
@@ -315,8 +314,7 @@ func main() {
 		fmt.Printf("Error: %v\n", err)
 		return
 	}
-	fmt.Println(resp.Choices[0].Message.Content)
-}`;
+	fmt.Println(resp.Choices[0].Message.Content)`;
     }
 
     return `package main
@@ -349,8 +347,7 @@ func main() {
 		fmt.Printf("Error: %v\n", err)
 		return
 	}
-	fmt.Println(resp.Choices[0].Message.Content)
-}`;
+	fmt.Println(resp.Choices[0].Message.Content)`;
 };
 
 export const getCurLExample = (
@@ -389,7 +386,7 @@ export const getRustExample = (
 ): string => {
     const isZh = lang.startsWith('zh');
     const comment = isZh 
-        ? '// \u63a8\u8350: \u4f7f\u7528 async-openai \u5e93 (\u5305\u5bb9\u6a21\u5f0f)' 
+        ? '// 推荐: 使用 async-openai 库 (兼容模式)' 
         : '// Recommended: Use async-openai crate (Compatibility Mode)';
 
     return `// Cargo.toml: async-openai = "0.26.0"
@@ -424,6 +421,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("{}", choice.message.content.as_ref().unwrap_or(&"\".to_string()));
     }
 
-    Ok(())
-}`;
+    Ok(())}`;
 };
