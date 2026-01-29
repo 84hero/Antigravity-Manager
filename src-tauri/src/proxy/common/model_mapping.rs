@@ -1,6 +1,6 @@
 // 模型名称映射
-use std::collections::HashMap;
 use once_cell::sync::Lazy;
+use std::collections::HashMap;
 
 static CLAUDE_TO_GEMINI: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     let mut m = HashMap::new();
@@ -46,7 +46,7 @@ static CLAUDE_TO_GEMINI: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|
     m.insert("gemini-3-pro-low", "gemini-3-pro-preview");
     m.insert("gemini-3-pro-high", "gemini-3-pro-preview");
     m.insert("gemini-3-pro-preview", "gemini-3-pro-preview");
-    m.insert("gemini-3-pro", "gemini-3-pro-preview");  // 统一映射到 preview
+    m.insert("gemini-3-pro", "gemini-3-pro-preview"); // 统一映射到 preview
     m.insert("gemini-2.5-flash", "gemini-2.5-flash");
     m.insert("gemini-3-flash", "gemini-3-flash");
     m.insert("gemini-3-pro-image", "gemini-3-pro-image");
@@ -55,9 +55,111 @@ static CLAUDE_TO_GEMINI: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|
     // Allows users to override all background tasks via custom_mapping
     m.insert("internal-background-task", "gemini-2.5-flash");
 
-
     m
 });
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RouteStrategy {
+    Direct,  // 默认: 全部转发 (One-to-One)
+    Limit,   // 限流转发: 原模型 429 -> 目标模型
+    Error,   // 错误转发: 原模型 !200 -> 目标模型
+    Random,  // 随机转发: Random(原模型, 目标模型)
+    Balance, // 平衡转发: RoundRobin(原模型, 目标模型)
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolvedRoute {
+    pub strategy: RouteStrategy,
+    pub primary: String,          // 首选模型
+    pub fallback: Option<String>, // 备选模型/对家模型
+}
+
+// 轮询计数器 (全局共享)
+static ROUND_ROBIN_COUNTER: once_cell::sync::Lazy<std::sync::atomic::AtomicUsize> =
+    once_cell::sync::Lazy::new(|| std::sync::atomic::AtomicUsize::new(0));
+
+pub fn resolve_model_route_v2(
+    original_model: &str,
+    custom_mapping: &std::collections::HashMap<String, String>,
+) -> ResolvedRoute {
+    // 1. 获取映射配置字符串 (包含 potential strategy prefix)
+    // 复用 resolve_model_route 的查找逻辑，但它会应用 normalize，我们需要原始 value
+    let raw_target = resolve_model_route_str_only(original_model, custom_mapping);
+
+    // 2. 如果没有映射 (raw_target == original_model)，且系统表也没变，就是 Direct 原样
+    // 注意：resolve_model_route_str_only 内部已经处理了 exact match 和 wildcard match
+
+    // 3. 解析前缀
+    if let Some((strategy_str, target_model)) = raw_target.split_once("://") {
+        let strategy = match strategy_str {
+            "limit" => RouteStrategy::Limit,
+            "error" => RouteStrategy::Error,
+            "random" => RouteStrategy::Random,
+            "balance" => RouteStrategy::Balance,
+            "direct" | "all" => RouteStrategy::Direct,
+            _ => RouteStrategy::Direct, // 默认 Direct
+        };
+
+        if strategy == RouteStrategy::Direct {
+            // direct://target -> 直接用 target
+            return ResolvedRoute {
+                strategy,
+                primary: target_model.to_string(),
+                fallback: None,
+            };
+        } else {
+            // limit://target -> 先 primary=original, fallback=target
+            // 注意：如果 raw_target 是从 mapping 里拿出来的，说明用户显式配置了映射。
+            // 用户的意图是: source -> [strategy] -> target
+            // 对于 limit/error/random/balance, "source" 也是参与者。
+            return ResolvedRoute {
+                strategy,
+                primary: original_model.to_string(),
+                fallback: Some(target_model.to_string()),
+            };
+        }
+    }
+
+    // 无前缀: 纯字符串映射 (Direct)
+    ResolvedRoute {
+        strategy: RouteStrategy::Direct,
+        primary: raw_target, // 这里已经是映射后的名字了 (或者原名)
+        fallback: None,
+    }
+}
+
+/// 内部辅助：只做字符串查找，不应用 v1 逻辑的 fallback 修正
+fn resolve_model_route_str_only(
+    original_model: &str,
+    custom_mapping: &std::collections::HashMap<String, String>,
+) -> String {
+    // 1. 精确匹配
+    if let Some(target) = custom_mapping.get(original_model) {
+        return target.clone();
+    }
+
+    // 2. 通配符匹配
+    let mut best_match: Option<(&str, &str, usize)> = None;
+    for (pattern, target) in custom_mapping.iter() {
+        if pattern.contains('*') && wildcard_match(pattern, original_model) {
+            let specificity = pattern.chars().count() - pattern.matches('*').count();
+            if best_match.is_none() || specificity > best_match.unwrap().2 {
+                best_match = Some((pattern.as_str(), target.as_str(), specificity));
+            }
+        }
+    }
+
+    if let Some((_, target, _)) = best_match {
+        return target.to_string();
+    }
+
+    // 3. 系统默认映射 (CLAUDE_TO_GEMINI)
+    // 如果没有自定义映射，回退到系统硬编码逻辑
+    let sys_result = map_claude_model_to_gemini(original_model);
+
+    // 如果系统映射也没变，就返回原值
+    sys_result
+}
 
 pub fn map_claude_model_to_gemini(input: &str) -> String {
     // 1. Check exact match in map
@@ -107,12 +209,12 @@ pub async fn get_all_dynamic_models(
 
     // 5. 确保包含常用的 Gemini/画画模型 ID
     model_ids.insert("gemini-3-pro-low".to_string());
-    
+
     // [NEW] Issue #247: Dynamically generate all Image Gen Combinations
     let base = "gemini-3-pro-image";
     let resolutions = vec!["", "-2k", "-4k"];
     let ratios = vec!["", "-1x1", "-4x3", "-3x4", "-16x9", "-9x16", "-21x9"];
-    
+
     for res in resolutions {
         for ratio in ratios.iter() {
             let mut id = base.to_string();
@@ -124,11 +226,10 @@ pub async fn get_all_dynamic_models(
 
     model_ids.insert("gemini-2.0-flash-exp".to_string());
     model_ids.insert("gemini-2.5-flash".to_string());
-    // gemini-2.5-pro removed 
+    // gemini-2.5-pro removed
     model_ids.insert("gemini-3-flash".to_string());
     model_ids.insert("gemini-3-pro-high".to_string());
     model_ids.insert("gemini-3-pro-low".to_string());
-
 
     let mut sorted_ids: Vec<_> = model_ids.into_iter().collect();
     sorted_ids.sort();
@@ -183,11 +284,11 @@ fn wildcard_match(pattern: &str, text: &str) -> bool {
 
 /// 核心模型路由解析引擎
 /// 优先级：精确匹配 > 通配符匹配 > 系统默认映射
-/// 
+///
 /// # 参数
 /// - `original_model`: 原始模型名称
 /// - `custom_mapping`: 用户自定义映射表
-/// 
+///
 /// # 返回
 /// 映射后的目标模型名称
 pub fn resolve_model_route(
@@ -196,10 +297,13 @@ pub fn resolve_model_route(
 ) -> String {
     // 1. 精确匹配 (最高优先级)
     if let Some(target) = custom_mapping.get(original_model) {
-        crate::modules::logger::log_info(&format!("[Router] 精确映射: {} -> {}", original_model, target));
+        crate::modules::logger::log_info(&format!(
+            "[Router] 精确映射: {} -> {}",
+            original_model, target
+        ));
         return target.clone();
     }
-    
+
     // 2. Wildcard match - most specific (highest non-wildcard chars) wins
     // Note: When multiple patterns have the SAME specificity, HashMap iteration order
     // determines the result (non-deterministic). Users can avoid this by making patterns
@@ -222,23 +326,26 @@ pub fn resolve_model_route(
         ));
         return target.to_string();
     }
-    
+
     // 3. 系统默认映射
     let result = map_claude_model_to_gemini(original_model);
     if result != original_model {
-        crate::modules::logger::log_info(&format!("[Router] 系统默认映射: {} -> {}", original_model, result));
+        crate::modules::logger::log_info(&format!(
+            "[Router] 系统默认映射: {} -> {}",
+            original_model, result
+        ));
     }
     result
 }
 
 /// Normalize any physical model name to one of the 3 standard protection IDs.
 /// This ensures quota protection works consistently regardless of API versioning or request variations.
-/// 
+///
 /// Standard IDs:
 /// - `gemini-3-flash`: All Flash variants (1.5-flash, 2.5-flash, 3-flash, etc.)
 /// - `gemini-3-pro-high`: All Pro variants (1.5-pro, 2.5-pro, etc.)
 /// - `claude-sonnet-4-5`: All Claude Sonnet variants (3-5-sonnet, sonnet-4-5, etc.)
-/// 
+///
 /// Returns `None` if the model doesn't match any of the 3 protected categories.
 pub fn normalize_to_standard_id(model_name: &str) -> Option<String> {
     // [FIX] Strict matching based on user-defined groups (Case Insensitive)
@@ -251,9 +358,11 @@ pub fn normalize_to_standard_id(model_name: &str) -> Option<String> {
         "gemini-3-pro-high" | "gemini-3-pro-low" => Some("gemini-3-pro-high".to_string()),
 
         // Claude 4.5 Sonnet Group
-        "claude-sonnet-4-5" | "claude-sonnet-4-5-thinking" | "claude-opus-4-5-thinking" => Some("claude-sonnet-4-5".to_string()),
+        "claude-sonnet-4-5" | "claude-sonnet-4-5-thinking" | "claude-opus-4-5-thinking" => {
+            Some("claude-sonnet-4-5".to_string())
+        }
 
-        _ => None
+        _ => None,
     }
 }
 
@@ -288,20 +397,32 @@ mod tests {
         custom.insert("gpt*".to_string(), "fallback".to_string());
         custom.insert("gpt-4*".to_string(), "specific".to_string());
         custom.insert("claude-opus-*".to_string(), "opus-default".to_string());
-        custom.insert("claude-opus*thinking".to_string(), "opus-thinking".to_string());
+        custom.insert(
+            "claude-opus*thinking".to_string(),
+            "opus-thinking".to_string(),
+        );
 
         // More specific pattern wins
         assert_eq!(resolve_model_route("gpt-4-turbo", &custom), "specific");
         assert_eq!(resolve_model_route("gpt-3.5", &custom), "fallback");
         // Suffix constraint is more specific than prefix-only
-        assert_eq!(resolve_model_route("claude-opus-4-5-thinking", &custom), "opus-thinking");
-        assert_eq!(resolve_model_route("claude-opus-4", &custom), "opus-default");
+        assert_eq!(
+            resolve_model_route("claude-opus-4-5-thinking", &custom),
+            "opus-thinking"
+        );
+        assert_eq!(
+            resolve_model_route("claude-opus-4", &custom),
+            "opus-default"
+        );
     }
 
     #[test]
     fn test_multi_wildcard_support() {
         let mut custom = HashMap::new();
-        custom.insert("claude-*-sonnet-*".to_string(), "sonnet-versioned".to_string());
+        custom.insert(
+            "claude-*-sonnet-*".to_string(),
+            "sonnet-versioned".to_string(),
+        );
         custom.insert("gpt-*-*".to_string(), "gpt-multi".to_string());
         custom.insert("*thinking*".to_string(), "has-thinking".to_string());
 
@@ -322,7 +443,7 @@ mod tests {
         // Negative case: *thinking* should NOT match models without "thinking"
         assert_eq!(
             resolve_model_route("random-model-name", &custom),
-            "claude-sonnet-4-5"  // Falls back to system default
+            "claude-sonnet-4-5" // Falls back to system default
         );
     }
 
@@ -334,7 +455,10 @@ mod tests {
         custom.insert("a*b*c".to_string(), "multi-wild".to_string());
 
         // Specificity: "prefix*" (6) > "*" (0)
-        assert_eq!(resolve_model_route("prefix-anything", &custom), "prefix-match");
+        assert_eq!(
+            resolve_model_route("prefix-anything", &custom),
+            "prefix-match"
+        );
         // Catch-all has lowest specificity
         assert_eq!(resolve_model_route("random-model", &custom), "catch-all");
         // Multi-wildcard: "a*b*c" (3)
