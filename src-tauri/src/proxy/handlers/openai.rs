@@ -14,11 +14,8 @@ use crate::proxy::mappers::openai::{
 use crate::proxy::server::AppState;
 
 const MAX_RETRY_ATTEMPTS: usize = 3;
-use super::common::{
-    apply_retry_strategy, determine_retry_strategy, should_rotate_account, RetryStrategy,
-};
+use super::common::{apply_retry_strategy, determine_retry_strategy};
 use crate::proxy::session_manager::SessionManager;
-use tokio::time::Duration;
 
 pub async fn handle_chat_completions(
     State(state): State<AppState>,
@@ -418,25 +415,71 @@ pub async fn handle_chat_completions(
                     .await;
             }
 
+            // ========== 混合重试策略 ==========
+            // 429/503 限流 → 立即切换模型（模型级配额问题，换账号无意义）
+            // 401/403 认证 → 换账号重试（账号级别问题）
+            // 其他错误 → 按原策略处理
+
+            let is_rate_limit_error =
+                status_code == 429 || status_code == 503 || status_code == 529;
+            let is_auth_error = status_code == 401 || status_code == 403;
+            let has_fallback_model = model_idx < execution_plan.len() - 1;
+
+            // 判断是否应该立即切换模型（而不是换账号）
+            let should_switch_model_immediately = is_rate_limit_error
+                && has_fallback_model
+                && matches!(
+                    route.strategy,
+                    crate::proxy::common::model_mapping::RouteStrategy::Limit
+                        | crate::proxy::common::model_mapping::RouteStrategy::Error
+                );
+
+            if should_switch_model_immediately {
+                // 🚀 立即切换模型，不浪费其他账号的配额
+                tracing::warn!(
+                    "[{}] 🔀 Rate limit {} on model {}, immediately switching to fallback: {}",
+                    trace_id,
+                    status_code,
+                    mapped_model,
+                    execution_plan[model_idx + 1]
+                );
+                continue 'model_loop; // 跳到外层模型循环的下一轮
+            }
+
             // 确定重试策略 (内部 Account Loop)
             let strategy = determine_retry_strategy(status_code, &error_text, false);
             if apply_retry_strategy(strategy, attempt, max_attempts, status_code, &trace_id).await {
-                // 如果是 400 Signature Error，特殊处理 (Logic omitted for brevity, assumed same)
+                // 如果是 400 Signature Error，特殊处理
                 if status_code == 400 && error_text.contains("signature") {
-                    // ... repair prompt logic ...
+                    // Thinking 签名错误，用相同账号重试
+                    debug!("[{}] Signature error, retrying with same account", trace_id);
                 }
 
-                // Account Rotation check
-                if !should_rotate_account(status_code) {
-                    debug!(
-                        "[{}] Keeping same account for status {}",
-                        trace_id, status_code
+                // 401/403 认证错误：换账号重试
+                if is_auth_error {
+                    tracing::warn!(
+                        "[{}] 🔄 Auth error {}, rotating to next account",
+                        trace_id,
+                        status_code
                     );
-                } else {
-                    tracing::warn!("Rotating account for status {}", status_code);
+                    continue; // 换账号
                 }
 
-                continue; // Retry next account
+                // 500 服务器错误：换账号可能换到不同节点
+                if status_code == 500 {
+                    tracing::warn!(
+                        "[{}] 🔄 Server error 500, rotating account (may hit different node)",
+                        trace_id
+                    );
+                    continue; // 换账号
+                }
+
+                // 其他可重试错误：用相同账号重试
+                debug!(
+                    "[{}] Retrying with same account for status {}",
+                    trace_id, status_code
+                );
+                continue;
             }
 
             // Non-retryable error inside Account Loop -> Break Account Loop
