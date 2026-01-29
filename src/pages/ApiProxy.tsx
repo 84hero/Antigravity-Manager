@@ -22,7 +22,11 @@ import {
     Code,
     Check,
     X,
-    Edit2
+    Edit2,
+    Activity,
+    AlertTriangle,
+    Shuffle,
+    Scale
 } from 'lucide-react';
 import { AppConfig, ProxyConfig, StickySessionConfig, ExperimentalConfig } from '../types/config';
 import HelpTooltip from '../components/common/HelpTooltip';
@@ -135,6 +139,20 @@ function CollapsibleCard({
     );
 }
 
+// Helper functions for Route Strategy
+const parseRoute = (val: string) => {
+    if (val.startsWith('limit://')) return { strategy: 'limit', model: val.replace('limit://', '') };
+    if (val.startsWith('error://')) return { strategy: 'error', model: val.replace('error://', '') };
+    if (val.startsWith('random://')) return { strategy: 'random', model: val.replace('random://', '') };
+    if (val.startsWith('balance://')) return { strategy: 'balance', model: val.replace('balance://', '') };
+    return { strategy: 'direct', model: val };
+};
+
+const buildRoute = (strategy: string, model: string) => {
+    if (strategy === 'direct') return model;
+    return `${strategy}://${model}`;
+};
+
 export default function ApiProxy() {
     const { t } = useTranslation();
 
@@ -160,8 +178,10 @@ export default function ApiProxy() {
     const [zaiNewMappingFrom, setZaiNewMappingFrom] = useState('');
     const [zaiNewMappingTo, setZaiNewMappingTo] = useState('');
     const [customMappingValue, setCustomMappingValue] = useState(''); // 自定义映射表单的选中值
+    const [customMappingStrategy, setCustomMappingStrategy] = useState('direct'); // 自定义映射表单的策略
     const [editingKey, setEditingKey] = useState<string | null>(null);
     const [editingValue, setEditingValue] = useState<string>('');
+    const [editingStrategy, setEditingStrategy] = useState<string>('direct');
 
     // API Key editing states
     const [isEditingApiKey, setIsEditingApiKey] = useState(false);
@@ -209,6 +229,15 @@ export default function ApiProxy() {
             group: model.group || 'Other'
         }));
     }, [models]);
+
+    // Strategy Options
+    const strategyOptions = useMemo(() => [
+        { value: 'direct', label: t('proxy.router.strategies.direct', { defaultValue: 'Direct' }), icon: <ArrowRight size={12} /> },
+        { value: 'limit', label: t('proxy.router.strategies.limit', { defaultValue: 'Limit Fallback' }), icon: <Activity size={12} /> },
+        { value: 'error', label: t('proxy.router.strategies.error', { defaultValue: 'Error Fallback' }), icon: <AlertTriangle size={12} /> },
+        { value: 'random', label: t('proxy.router.strategies.random', { defaultValue: 'Random' }), icon: <Shuffle size={12} /> },
+        { value: 'balance', label: t('proxy.router.strategies.balance', { defaultValue: 'Balance' }), icon: <Scale size={12} /> },
+    ], [t]);
 
     // 初始化加载
     useEffect(() => {
@@ -2025,72 +2054,117 @@ print(response.text)`;
                                             <div className="overflow-y-auto max-h-[180px] border border-gray-100 dark:border-white/5 rounded-lg bg-gray-50/10 dark:bg-white/5 p-3" data-custom-mapping-list>
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
                                                     {appConfig.proxy.custom_mapping && Object.entries(appConfig.proxy.custom_mapping).length > 0 ? (
-                                                        Object.entries(appConfig.proxy.custom_mapping).map(([key, val]) => (
-                                                            <div key={key} className={`flex items-center justify-between p-1.5 rounded-md transition-all border group ${editingKey === key ? 'bg-blue-50/80 dark:bg-blue-900/15 border-blue-300/50 dark:border-blue-500/30 shadow-sm' : 'border-transparent hover:bg-gray-100 dark:hover:bg-white/5 hover:border-gray-200 dark:hover:border-white/10'}`}>
-                                                                <div className="flex items-center gap-2.5 overflow-hidden flex-1">
-                                                                    <span className="font-mono text-[10px] font-bold text-blue-600 dark:text-blue-400 truncate max-w-[140px]" title={key}>{key}</span>
-                                                                    <ArrowRight size={10} className="text-gray-300 dark:text-gray-600 shrink-0" />
+                                                        Object.entries(appConfig.proxy.custom_mapping).map(([key, val]) => {
+                                                            // Parse route for display
+                                                            const { strategy, model } = parseRoute(val);
+                                                            const strategyMeta = strategyOptions.find(s => s.value === strategy) || strategyOptions[0];
 
-                                                                    {editingKey === key ? (
-                                                                        <div className="flex-1 mr-2">
-                                                                            <GroupedSelect
-                                                                                value={editingValue}
-                                                                                onChange={setEditingValue}
-                                                                                options={customMappingOptions}
-                                                                                placeholder="Select..."
-                                                                                className="font-mono text-[10px] h-7 dark:bg-gray-800 border-blue-200 dark:border-blue-800"
-                                                                            />
-                                                                        </div>
-                                                                    ) : (
-                                                                        <span className="font-mono text-[10px] text-gray-500 dark:text-gray-400 truncate cursor-pointer hover:text-blue-500"
-                                                                            onClick={() => { setEditingKey(key); setEditingValue(val); }}
-                                                                            title={val}>{val}</span>
-                                                                    )}
-                                                                </div>
+                                                            return (
+                                                                <div key={key} className={`flex items-center justify-between p-1.5 rounded-md transition-all border group ${editingKey === key ? 'bg-blue-50/80 dark:bg-blue-900/15 border-blue-300/50 dark:border-blue-500/30 shadow-sm' : 'border-transparent hover:bg-gray-100 dark:hover:bg-white/5 hover:border-gray-200 dark:hover:border-white/10'}`}>
+                                                                    <div className="flex items-center gap-2.5 overflow-hidden flex-1">
+                                                                        <span className="font-mono text-[10px] font-bold text-blue-600 dark:text-blue-400 truncate max-w-[100px]" title={key}>{key}</span>
 
-                                                                <div className="flex items-center gap-1.5 shrink-0">
-                                                                    {editingKey === key ? (
-                                                                        <div className="flex items-center gap-1 bg-white dark:bg-gray-800 rounded-md border border-blue-200 dark:border-blue-800 p-0.5 shadow-sm">
-                                                                            <button
-                                                                                className="btn btn-ghost btn-xs text-primary hover:bg-blue-50 dark:hover:bg-blue-900/30 p-0 h-6 w-6 min-h-0"
-                                                                                onClick={() => {
-                                                                                    handleMappingUpdate('custom', key, editingValue);
-                                                                                    setEditingKey(null);
-                                                                                }}
-                                                                                title={t('common.save') || 'Save'}
-                                                                            >
-                                                                                <Check size={14} strokeWidth={3} />
-                                                                            </button>
-                                                                            <div className="w-[1px] h-3 bg-gray-200 dark:bg-gray-700" />
-                                                                            <button
-                                                                                className="btn btn-ghost btn-xs text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 p-0 h-6 w-6 min-h-0"
-                                                                                onClick={() => setEditingKey(null)}
-                                                                                title={t('common.cancel') || 'Cancel'}
-                                                                            >
-                                                                                <X size={14} strokeWidth={3} />
-                                                                            </button>
-                                                                        </div>
-                                                                    ) : (
-                                                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                            <button
-                                                                                className="btn btn-ghost btn-xs text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-white/10 p-0 h-6 w-6 min-h-0"
-                                                                                onClick={() => { setEditingKey(key); setEditingValue(val); }}
-                                                                                title={t('common.edit') || 'Edit'}
-                                                                            >
-                                                                                <Edit2 size={12} />
-                                                                            </button>
-                                                                            <button
-                                                                                className="btn btn-ghost btn-xs text-error hover:bg-red-50 dark:hover:bg-red-900/20 p-0 h-6 w-6 min-h-0"
-                                                                                onClick={() => handleRemoveCustomMapping(key)}
-                                                                                title={t('common.delete') || 'Delete'}
-                                                                            >
-                                                                                <Trash2 size={12} />
-                                                                            </button>
-                                                                        </div>
-                                                                    )}
+                                                                        {editingKey === key ? (
+                                                                            <div className="flex items-center gap-1 flex-1 mr-2">
+                                                                                {/* Strategy Select */}
+                                                                                <div className="shrink-0 w-24">
+                                                                                    <select
+                                                                                        className="select select-bordered select-xs w-full text-[9px] h-7 min-h-0 px-2 font-medium"
+                                                                                        value={editingStrategy}
+                                                                                        onChange={(e) => setEditingStrategy(e.target.value)}
+                                                                                    >
+                                                                                        {strategyOptions.map(opt => (
+                                                                                            <option key={opt.value} value={opt.value}>
+                                                                                                {opt.label}
+                                                                                            </option>
+                                                                                        ))}
+                                                                                    </select>
+                                                                                </div>
+                                                                                <ArrowRight size={10} className="text-gray-300 dark:text-gray-600 shrink-0" />
+                                                                                <div className="flex-1 min-w-0">
+                                                                                    <GroupedSelect
+                                                                                        value={editingValue}
+                                                                                        onChange={setEditingValue}
+                                                                                        options={customMappingOptions}
+                                                                                        placeholder="Select..."
+                                                                                        className="font-mono text-[10px] h-7 dark:bg-gray-800 border-blue-200 dark:border-blue-800"
+                                                                                    />
+                                                                                </div>
+                                                                            </div>
+                                                                        ) : (
+                                                                            <>
+                                                                                {/* Strategy Badge */}
+                                                                                <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium border ${strategy === 'direct' ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 border-transparent' :
+                                                                                    strategy === 'limit' ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-600 border-amber-200/50' :
+                                                                                        strategy === 'error' ? 'bg-red-50 dark:bg-red-900/20 text-red-600 border-red-200/50' :
+                                                                                            'bg-purple-50 dark:bg-purple-900/20 text-purple-600 border-purple-200/50'
+                                                                                    }`}>
+                                                                                    {strategyMeta.icon}
+                                                                                    <span className="uppercase tracking-tighter">{strategy}</span>
+                                                                                </div>
+                                                                                <ArrowRight size={10} className="text-gray-300 dark:text-gray-600 shrink-0" />
+                                                                                <span className="font-mono text-[10px] text-gray-500 dark:text-gray-400 truncate cursor-pointer hover:text-blue-500 flex-1"
+                                                                                    onClick={() => {
+                                                                                        setEditingKey(key);
+                                                                                        const { strategy: s, model: m } = parseRoute(val);
+                                                                                        setEditingStrategy(s);
+                                                                                        setEditingValue(m);
+                                                                                    }}
+                                                                                    title={val}>{model}</span>
+                                                                            </>
+                                                                        )}
+                                                                    </div>
+
+                                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                                        {editingKey === key ? (
+                                                                            <div className="flex items-center gap-1 bg-white dark:bg-gray-800 rounded-md border border-blue-200 dark:border-blue-800 p-0.5 shadow-sm">
+                                                                                <button
+                                                                                    className="btn btn-ghost btn-xs text-primary hover:bg-blue-50 dark:hover:bg-blue-900/30 p-0 h-6 w-6 min-h-0"
+                                                                                    onClick={() => {
+                                                                                        const fullValue = buildRoute(editingStrategy, editingValue);
+                                                                                        handleMappingUpdate('custom', key, fullValue);
+                                                                                        setEditingKey(null);
+                                                                                    }}
+                                                                                    title={t('common.save') || 'Save'}
+                                                                                >
+                                                                                    <Check size={14} strokeWidth={3} />
+                                                                                </button>
+                                                                                <div className="w-[1px] h-3 bg-gray-200 dark:bg-gray-700" />
+                                                                                <button
+                                                                                    className="btn btn-ghost btn-xs text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 p-0 h-6 w-6 min-h-0"
+                                                                                    onClick={() => setEditingKey(null)}
+                                                                                    title={t('common.cancel') || 'Cancel'}
+                                                                                >
+                                                                                    <X size={14} strokeWidth={3} />
+                                                                                </button>
+                                                                            </div>
+                                                                        ) : (
+                                                                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                                <button
+                                                                                    className="btn btn-ghost btn-xs text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-white/10 p-0 h-6 w-6 min-h-0"
+                                                                                    onClick={() => {
+                                                                                        setEditingKey(key);
+                                                                                        const { strategy: s, model: m } = parseRoute(val);
+                                                                                        setEditingStrategy(s);
+                                                                                        setEditingValue(m);
+                                                                                    }}
+                                                                                    title={t('common.edit') || 'Edit'}
+                                                                                >
+                                                                                    <Edit2 size={12} />
+                                                                                </button>
+                                                                                <button
+                                                                                    className="btn btn-ghost btn-xs text-error hover:bg-red-50 dark:hover:bg-red-900/20 p-0 h-6 w-6 min-h-0"
+                                                                                    onClick={() => handleRemoveCustomMapping(key)}
+                                                                                    title={t('common.delete') || 'Delete'}
+                                                                                >
+                                                                                    <Trash2 size={12} />
+                                                                                </button>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
                                                                 </div>
-                                                            </div>
-                                                        ))
+                                                            );
+                                                        })
                                                     ) : (
                                                         <div className="col-span-full text-center py-4 text-gray-400 dark:text-gray-600 italic text-[11px]">{t('proxy.router.no_custom_mapping')}</div>
                                                     )}
@@ -2112,6 +2186,20 @@ print(response.text)`;
                                                         placeholder={t('proxy.router.original_placeholder') || "Original (e.g. gpt-4 or gpt-4*)"}
                                                         className="input input-xs input-bordered flex-1 font-mono text-[11px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 h-8"
                                                     />
+                                                    <div className="w-24 shrink-0">
+                                                        <select
+                                                            className="select select-bordered select-xs w-full h-8 px-2 font-medium text-[10px]"
+                                                            value={customMappingStrategy}
+                                                            onChange={(e) => setCustomMappingStrategy(e.target.value)}
+                                                            title={t('proxy.router.select_strategy') || 'Select Routing Strategy'}
+                                                        >
+                                                            {strategyOptions.map(opt => (
+                                                                <option key={opt.value} value={opt.value}>
+                                                                    {opt.label}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
                                                     <div className="w-full sm:w-48">
                                                         <GroupedSelect
                                                             value={customMappingValue}
@@ -2127,10 +2215,13 @@ print(response.text)`;
                                                     onClick={() => {
                                                         const k = (document.getElementById('custom-key') as HTMLInputElement).value;
                                                         const v = customMappingValue;
+                                                        const s = customMappingStrategy;
                                                         if (k && v) {
-                                                            handleMappingUpdate('custom', k, v);
+                                                            const fullValue = buildRoute(s, v);
+                                                            handleMappingUpdate('custom', k, fullValue);
                                                             (document.getElementById('custom-key') as HTMLInputElement).value = '';
                                                             setCustomMappingValue(''); // 清空选择
+                                                            setCustomMappingStrategy('direct'); // 重置策略
                                                         }
                                                     }}
                                                 >
